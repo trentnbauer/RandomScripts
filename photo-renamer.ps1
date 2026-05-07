@@ -109,21 +109,25 @@ if ($SavedSettings) {
         Write-Host "Using previous settings.`n"
     } else {
         Write-Host "Starting fresh.`n"
+        }
     }
-}
 
 # Get source path
 if ($SourcePath -eq $null) {
-    Write-Host "Prompting for source path..."
-    $SourcePath = PickFolder -Description "Select SOURCE folder (photos to rename)"
-}
+    if ( (Read-Host "Use downloads folder? Y/N" ) -eq "Y" ) {
+        $SourcePath = "$env:USERPROFILE\downloads"
+        } else {
+        Write-Host "Prompting for source path..."
+        $SourcePath = PickFolder -Description "Select SOURCE folder (photos to rename)"
+        }
+    }
 Test-Writable $SourcePath -ErrorAction Stop
 
 # Get output path
 if ($OutputPath -eq $null) {
     Write-Host "Prompting for output path..."
     $OutputPath = PickFolder -Description "Select OUTPUT folder"
-}
+    }
 Test-Writable $OutputPath -ErrorAction Stop
 
 # Gather camera, film stock, and hemisphere info
