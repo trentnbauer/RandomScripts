@@ -6,8 +6,6 @@ This script was written to help with sorting my images by year, season and down 
 I will then sort the folder by creation date.
 
 The intention is to create a yearly photobook, sorted by season. I can also add the camera model and film stock as a note in the book if I want.
-
-
 #>
 
 $SourcePath = $null
@@ -90,8 +88,8 @@ function Save-Settings ([string]$OutputPath, [string]$Hemisphere) {
     if (-not (Test-Path $RegPath)) {
         New-Item -Path $RegPath -Force | Out-Null
     }
-    Set-ItemProperty -Path $RegPath -Name "OutputPath"  -Value $OutputPath
-    Set-ItemProperty -Path $RegPath -Name "Hemisphere"  -Value $Hemisphere
+    Set-ItemProperty -Path $RegPath -Name "OutputPath" -Value $OutputPath
+    Set-ItemProperty -Path $RegPath -Name "Hemisphere" -Value $Hemisphere
 }
 
 #### ---- START SCRIPT ---- ####
@@ -109,25 +107,25 @@ if ($SavedSettings) {
         Write-Host "Using previous settings.`n"
     } else {
         Write-Host "Starting fresh.`n"
-        }
     }
+}
 
 # Get source path
 if ($SourcePath -eq $null) {
-    if ( (Read-Host "Use downloads folder? Y/N" ) -eq "Y" ) {
+    if ((Read-Host "Use downloads folder? Y/N") -eq "Y") {
         $SourcePath = "$env:USERPROFILE\downloads"
-        } else {
+    } else {
         Write-Host "Prompting for source path..."
         $SourcePath = PickFolder -Description "Select SOURCE folder (photos to rename)"
-        }
     }
+}
 Test-Writable $SourcePath -ErrorAction Stop
 
 # Get output path
 if ($OutputPath -eq $null) {
     Write-Host "Prompting for output path..."
     $OutputPath = PickFolder -Description "Select OUTPUT folder"
-    }
+}
 Test-Writable $OutputPath -ErrorAction Stop
 
 # Gather camera, film stock, and hemisphere info
@@ -164,6 +162,18 @@ Get-ChildItem -Path $SourcePath -Recurse | Where-Object {
     Copy-Item $_.FullName -Destination $WorkingDir -ErrorAction Stop
 }
 
+# Determine roll number by checking output folder for existing matches
+$RollPattern = "*-$($Camera)-$($FilmStock)-R*"
+$ExistingRolls = Get-ChildItem -Path $OutputPath -Filter $RollPattern -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        if ($_.BaseName -match '-R(\d+)-') { [int]$Matches[1] }
+    } | Sort-Object -Descending
+
+$RollNumber = if ($ExistingRolls) { $ExistingRolls[0] + 1 } else { 1 }
+$RollString = "R$('{0:D2}' -f $RollNumber)"
+
+Write-Host "Roll detected as: $RollString"
+
 # Rename files and copy to output
 Write-Host "Renaming and copying files to output..."
 $PhotoNumber = 1
@@ -178,13 +188,13 @@ Get-ChildItem -Path $WorkingDir | Where-Object {
 
     # Build naming schema now that all variables are populated
     $Extension   = $_.Extension
-    $NewName     = "$($Year)-$($Season)-$($Camera)-$($FilmStock)-$('{0:D4}' -f $PhotoNumber)$Extension"
+    $NewName     = "$($Year)-$($Season)-$($Camera)-$($FilmStock)-$($RollString)-$('{0:D4}' -f $PhotoNumber)$Extension"
     $Destination = Join-Path $OutputPath $NewName
 
-    # Handle duplicate filenames
+    # Handle duplicate filenames (shouldn't normally happen with roll numbers)
     $Counter = 1
     while (Test-Path $Destination) {
-        $NewName     = "$($Year)-$($Season)-$($Camera)-$($FilmStock)-$('{0:D4}' -f $PhotoNumber)_$Counter$Extension"
+        $NewName     = "$($Year)-$($Season)-$($Camera)-$($FilmStock)-$($RollString)-$('{0:D4}' -f $PhotoNumber)_$Counter$Extension"
         $Destination = Join-Path $OutputPath $NewName
         $Counter++
     }
