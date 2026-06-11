@@ -18,7 +18,7 @@ $SourcePath       = $null
 $OutputPath       = $null
 $Camera           = $null
 $FilmStock        = $null
-$Hemisphere       = $null  # Set to "Northern" or "Southern", or leave $null to be prompted
+$Hemisphere       = $null  # Set to "Northern" or "Southern" to override, or leave $null to auto-detect from device region
 $ProcessingOffset = $null  # Days to subtract from file creation time; leave $null to be prompted
 
 # Other variables you probably don't need to edit
@@ -59,6 +59,37 @@ function Test-IsImage ([string]$FilePath) {
     Add-Type -AssemblyName System.Web
     $MimeType = [System.Web.MimeMapping]::GetMimeMapping($FilePath)
     return $MimeType -like "image/*"
+}
+
+function Get-HemisphereFromDevice {
+    # GeoID -> ISO 3166-1 alpha-2 country code lookup via .NET
+    # Falls back to $null if the region cannot be determined.
+    try {
+        $GeoId   = (Get-WinHomeLocation).GeoId
+        $Region  = [System.Globalization.RegionInfo]::new($GeoId)
+        $Country = $Region.TwoLetterISORegionName.ToUpper()
+    } catch {
+        return $null
+    }
+
+    # Southern hemisphere countries by ISO code.
+    # Equatorial/straddle countries (e.g. KE, EC, ID) are omitted — they'll fall through to Northern
+    # as a reasonable default, and the user can override if needed.
+    $SouthernCountries = @(
+        # South America
+        'AR','BO','BR','CL','CO','EC','GY','PY','PE','SR','UY','VE',
+        # Africa (south of equator)
+        'AO','BW','BI','CD','KM','CG','LS','MG','MW','MZ','NA','RW',
+        'ST','SC','ZA','SS','SZ','TZ','ZM','ZW',
+        # Oceania
+        'AU','FJ','KI','MH','FM','NR','NZ','PW','PG','SB','TO','TV','VU','WS'
+    )
+
+    if ($SouthernCountries -contains $Country) {
+        return "Southern"
+    } else {
+        return "Northern"
+    }
 }
 
 function Get-Season ([datetime]$Date) {
@@ -149,18 +180,32 @@ Test-Writable $OutputPath -ErrorAction Stop
 if ($Camera    -eq $null) { $Camera    = (Read-Host "Please provide the camera name").Replace(' ','') }
 if ($FilmStock -eq $null) { $FilmStock = (Read-Host "Please provide the film stock name").Replace(' ','') }
 
-# Hemisphere — prompt with saved default if available
+# Hemisphere — auto-detect from device region, then confirm with user
 if ($Hemisphere -eq $null) {
-    $HemisphereDefault = if ($SavedSettings.Hemisphere) { $SavedSettings.Hemisphere } else { $null }
-    do {
-        $HemisphereInput = Prompt-WithDefault -Prompt "Northern or Southern hemisphere? (N/S)" -Default $HemisphereDefault
-        $Hemisphere = switch ($HemisphereInput.ToUpper()) {
-            "N"        { "Northern" }
-            "S"        { "Southern" }
-            "Northern" { "Northern" }
-            "Southern" { "Southern" }
+    $Detected = Get-HemisphereFromDevice
+    if ($Detected) {
+        Write-Host "Detected hemisphere from device region: $Detected"
+        $Confirm = Read-Host "Use this? (Y/N)"
+        if ($Confirm.ToUpper() -eq "Y") {
+            $Hemisphere = $Detected
         }
-    } while ($Hemisphere -notin @("Northern", "Southern"))
+    } else {
+        Write-Host "Could not detect hemisphere from device region."
+    }
+
+    # Fall back to manual prompt if detection failed or user rejected it
+    if ($Hemisphere -eq $null) {
+        $HemisphereDefault = if ($SavedSettings.Hemisphere) { $SavedSettings.Hemisphere } else { $null }
+        do {
+            $HemisphereInput = Prompt-WithDefault -Prompt "Northern or Southern hemisphere? (N/S)" -Default $HemisphereDefault
+            $Hemisphere = switch ($HemisphereInput.ToUpper()) {
+                "N"        { "Northern" }
+                "S"        { "Southern" }
+                "Northern" { "Northern" }
+                "Southern" { "Southern" }
+            }
+        } while ($Hemisphere -notin @("Northern", "Southern"))
+    }
 }
 
 # Processing offset — prompt with saved default, Enter accepts it
